@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>CS465 Assignment 2</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #1b1b22; overflow: hidden; font-family: sans-serif; }
+  /* The canvas fills the window. clientWidth/clientHeight drive the aspect ratio. */
+  canvas { display: block; width: 100%; height: 100%; }
+  #help { position: absolute; top: 8px; left: 8px; color: #ddd; font-size: 13px;
+          background: rgba(0,0,0,.45); padding: 6px 10px; border-radius: 4px; }
+  #help button { margin-top: 4px; }
+  #status { margin-top: 4px; white-space: pre-line; max-width: 360px; } /* one message per line */
+</style>
+</head>
+<body>
+<canvas id="glcanvas"></canvas>
+<div id="help">
+  Left drag: orbit &nbsp;|&nbsp; Right / Shift drag: pan &nbsp;|&nbsp; Wheel: zoom<br>
+  Click a part to select it &nbsp;|&nbsp; Selected: <b id="picked">none</b><br>
+  <button id="resetBtn">Reset camera</button>
+  <hr style="border:0;border-top:1px solid #666;margin:6px 0">
+  OBJ files (names separated by commas, spaces or new lines):<br>
+  <textarea id="fileNames" rows="3" cols="34" placeholder="bee_body.obj, bee_leg.obj"></textarea><br>
+  <button id="loadBtn">Load</button>
+  <div id="status"></div>
+</div>
+
+<!-- Shaders are embedded (not fetched) so this works from file:// without a server. -->
+
+<!-- ========== Lit shader (same style as your block shaders) ========== -->
+<script id="lit-vs" type="x-shader/x-vertex">#version 300 es
+// WebGL 2 uses GLSL ES 3.00, so the version line is "300 es" (not "330 core").
+// The first line must be the very first characters of the script, with no leading whitespace.
+layout (location = 0) in vec3 aPos;
+layout (location = 1) in vec3 aNormal;
+layout (location = 2) in vec2 aTexCoords;
+
+out vec3 Normal;
+out vec3 FragPos;
+out vec2 TexCoords;
+
+uniform mat4 projection;
+uniform mat4 view;
+uniform mat4 model;   // NEW vs your shader: needed for the hierarchical model
+
+void main()
+{
+    // World-space position (your version used aPos directly; with a model
+    // matrix, lighting must be done in world space or it will not follow
+    // the joints as they move).
+    vec4 worldPos = model * vec4(aPos, 1.0);
+    FragPos = worldPos.xyz;
+
+    // Normals need the inverse-transpose of the model matrix so that
+    // non-uniform scaling (e.g. a flattened box for a wing) doesn't skew them.
+    Normal = mat3(transpose(inverse(model))) * aNormal;
+
+    TexCoords = aTexCoords;
+    gl_Position = projection * view * worldPos;
+}
+</script>
+
+<script id="lit-fs" type="x-shader/x-fragment">#version 300 es
+// Fragment shaders in GLSL ES must declare a default float precision.
+precision mediump float;
+out vec4 FragColor;
+in vec3 Normal;
+in vec3 FragPos;
+in vec2 TexCoords;
+
+uniform vec3 lightPos;
+uniform vec3 lightColor;
+uniform vec3 ambientColor;
+uniform vec3 viewPos;
+uniform sampler2D myTexture;
+// Picking highlight: the final colour is blended toward highlightColor by
+// highlightAmount (0 = not selected, 0.5 = selected). Set from main.js.
+uniform vec3 highlightColor;
+uniform float highlightAmount;
+
+void main()
+{
+    vec3 N = normalize(Normal);
+
+    // Ambient: constant base light so shadowed faces aren't pitch black.
+    float ambientStrength = 0.2;
+    vec3 ambient = ambientStrength * ambientColor * lightColor;
+
+    // Diffuse (Lambert): brightness = cos(angle between normal and light).
+    vec3 lightDir = normalize(lightPos - FragPos);
+    float distance = length(lightPos - FragPos);
+    vec3 diffuse = max(dot(N, lightDir), 0.0) * lightColor;
+
+    // Specular (Phong): highlight where the reflection points at the eye.
+    float specularStrength = 0.5;
+    vec3 viewDir = normalize(viewPos - FragPos);
+    vec3 reflectDir = reflect(-lightDir, N);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 16.0);
+    vec3 specular = specularStrength * spec * lightColor;
+
+    // Distance attenuation (same constants as your shader).
+    float attenuation = 1.0 / (1.0 + 0.09 * distance + 0.032 * distance * distance);
+    diffuse  *= attenuation;
+    specular *= attenuation;
+
+    // CHANGE vs your shader: you ADDED the texture to the lighting, which
+    // washes the texture out. Lighting should MODULATE the texture colour
+    // (multiply), and the specular highlight is added on top.
+    vec3 texColor = texture(myTexture, TexCoords).rgb;
+    vec3 lit = (ambient + diffuse) * texColor + specular;
+    // mix(a, b, t) = a*(1-t) + b*t, so the selected part is tinted but its
+    // texture and shading still show through.
+    FragColor = vec4(mix(lit, highlightColor, highlightAmount), 1.0);
+}
+</script>
+
+<!-- ========== Flat-colour shader for the grid and axes ========== -->
+<script id="line-vs" type="x-shader/x-vertex">#version 300 es
+layout (location = 0) in vec3 aPos;
+layout (location = 1) in vec3 aColor;
+out vec3 vColor;
+uniform mat4 projection;
+uniform mat4 view;
+void main() {
+    vColor = aColor;
+    gl_Position = projection * view * vec4(aPos, 1.0);
+}
+</script>
+<script id="line-fs" type="x-shader/x-fragment">#version 300 es
+precision mediump float;
+in vec3 vColor;
+out vec4 FragColor;
+void main() { FragColor = vec4(vColor, 1.0); }
+</script>
+
+<!-- ========== Picking shader: draws each part in one flat ID colour ========== -->
+<script id="pick-vs" type="x-shader/x-vertex">#version 300 es
+layout (location = 0) in vec3 aPos;
+uniform mat4 projection;
+uniform mat4 view;
+uniform mat4 model;
+void main() {
+    gl_Position = projection * view * model * vec4(aPos, 1.0);
+}
+</script>
+<script id="pick-fs" type="x-shader/x-fragment">#version 300 es
+precision mediump float;
+uniform vec4 pickColor;   // the part's ID encoded as a colour (no lighting, no texture)
+out vec4 FragColor;
+void main() { FragColor = pickColor; }
+</script>
+
+<script src="math.js"></script>
+<script src="camera.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
