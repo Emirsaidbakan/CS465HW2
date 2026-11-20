@@ -24,6 +24,12 @@
   <textarea id="fileNames" rows="3" cols="34" placeholder="bee_body.obj, bee_leg.obj"></textarea><br>
   <button id="loadBtn">Load</button>
   <div id="status"></div>
+  <hr style="border:0;border-top:1px solid #666;margin:6px 0">
+  Animation keyframes:<br>
+  <button id="animSaveBtn" type="button">Save animation</button>
+  <button id="animLoadBtn" type="button">Load animation</button>
+  <input id="animFile" type="file" accept=".json,application/json" hidden>
+  <div id="animStatus"></div>
 </div>
 
 <!-- Shaders are embedded (not fetched) so this works from file:// without a server. -->
@@ -153,6 +159,8 @@ void main() { FragColor = pickColor; }
 
 <script src="math.js"></script>
 <script src="camera.js"></script>
+<script src="clock.js"></script>
+<script src="animation.js"></script>
 <script src="main.js"></script>
 </body>
 </html>

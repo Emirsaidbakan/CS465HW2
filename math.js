@@ -57,12 +57,30 @@ const mat4 = {
     return m;
   },
 
-  // Rotation about the Y axis (angle in radians)
+  // Rotations about the principal axes (angle in radians). Same layout as
+  // rotationY: column-major, right-handed, so a positive angle turns the
+  // other two axes in the right-hand sense.
+  rotationX(a) {
+    const m = mat4.identity();
+    const c = Math.cos(a), s = Math.sin(a);
+    m[5] = c;  m[9] = -s;
+    m[6] = s;  m[10] = c;
+    return m;
+  },
+
   rotationY(a) {
     const m = mat4.identity();
     const c = Math.cos(a), s = Math.sin(a);
     m[0] = c;  m[8] = s;
     m[2] = -s; m[10] = c;
+    return m;
+  },
+
+  rotationZ(a) {
+    const m = mat4.identity();
+    const c = Math.cos(a), s = Math.sin(a);
+    m[0] = c;  m[4] = -s;
+    m[1] = s;  m[5] = c;
     return m;
   },
 

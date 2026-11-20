@@ -450,7 +450,8 @@ canvas.addEventListener("pointerup", (e) => {
                   y: Math.min(Math.max(y, 0), canvas.height - 1) };
 });
 
-function render() {
+function render(now) {
+  clock.tick(now);
   resizeCanvas();
 
   // Both matrices come from the camera every frame, so mouse input is
